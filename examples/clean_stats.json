@@ -1,0 +1,13 @@
+{
+    "stats": {
+        "custom": {
+            "jump": 2,
+            "time_since_rest": 119,
+            "play_one_minute": 119,
+            "leave_game": 1,
+            "time_since_death": 119,
+            "walk_one_cm": 63
+        }
+    },
+    "DataVersion": 2230
+}
