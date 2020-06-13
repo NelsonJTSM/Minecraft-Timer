@@ -6,51 +6,40 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use notify::{watcher, DebouncedEvent, INotifyWatcher, RecursiveMode, Watcher};
+use notify::{DebouncedEvent, INotifyWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
+
+use std::thread;
 
 pub fn run() {
     let minecraft_folder = get_minecraft_folder_path();
     let saves_folder = minecraft_folder.join("saves");
 
-    // Watcher variables
-    let (stat_sender, stat_receiver) = channel();
-    let mut stat_watcher = watcher(stat_sender, Duration::from_secs(1)).unwrap();
+    let stat_thread = thread::spawn(|| {
+        let (tx, rx) = channel();
+        let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(2)).unwrap();
+        watcher.watch(saves_folder, RecursiveMode::Recursive);
+        loop {
+            match rx.recv() {
+                Ok(event) => match event {
+                    DebouncedEvent::Write(file) => {
+                        if file.extension().unwrap() == "json"
+                            && file.parent().unwrap().file_name().unwrap() == "stats"
+                        {
+                            display_player_stat(fs::read_to_string(file).unwrap());
+                        }
+                    }
+                    _ => (),
+                },
+                Err(e) => println!("watch error: {:?}", e),
+            }
+        }
+    });
 
-    let (new_world_sender, new_world_receiver) = channel();
-    let mut new_world_watcher = watcher(new_world_sender, Duration::from_secs(1)).unwrap();
+    stat_thread.join().unwrap();
 
-    let (stat_folder_sender, stat_folder_receiver) = channel();
-    let mut stat_folder_watcher = watcher(stat_folder_sender, Duration::from_secs(1)).unwrap();
-
-    let (new_player_sender, new_player_receiver) = channel();
-    let mut new_player_watcher = watcher(new_player_sender, Duration::from_secs(1)).unwrap();
-
-    new_world_watcher
-        .watch(saves_folder, RecursiveMode::NonRecursive)
-        .unwrap();
-
-    /*
-    stat_folder_watcher
-        .watch(
-            PathBuf::from("/home/town/.minecraft/saves/New World (14)/stats"),
-            RecursiveMode::NonRecursive,
-        )
-        .unwrap();
-    */
-
-    loop {
-        println!("bruh1");
-        loop_new_world_watcher(&new_world_receiver, &mut stat_folder_watcher);
-        println!("bruh2");
-        loop_stat_folder_watcher(&stat_folder_receiver, &mut new_player_watcher);
-        println!("bruh3");
-        loop_new_player_watcher(&new_player_receiver, &mut stat_watcher);
-        loop_stat_watcher(&stat_receiver);
-        println!("he");
-    }
 }
 
 fn loop_new_player_watcher(receiver: &Receiver<DebouncedEvent>, watcher: &mut INotifyWatcher) {
