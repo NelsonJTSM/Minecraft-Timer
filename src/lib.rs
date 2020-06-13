@@ -1,24 +1,134 @@
 extern crate dirs;
 extern crate notify;
 
-use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
-use serde::{Deserialize, Serialize};
-use serde_json::Result;
-use std::sync::mpsc::channel;
-use std::time::Duration;
-
+use std::fs;
 use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+
+use notify::{watcher, DebouncedEvent, INotifyWatcher, RecursiveMode, Watcher};
+use std::sync::mpsc::channel;
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
 
 pub fn run() {
     let minecraft_folder = get_minecraft_folder_path();
     let saves_folder = minecraft_folder.join("saves");
-    let mut saves: Vec<PathBuf> = Vec::new();
 
-    // watch_saves_folder(&saves_folder, &mut saves);
-    watch_stats(saves);
+    // Watcher variables
+    let (stat_sender, stat_receiver) = channel();
+    let mut stat_watcher = watcher(stat_sender, Duration::from_secs(1)).unwrap();
+
+    let (new_world_sender, new_world_receiver) = channel();
+    let mut new_world_watcher = watcher(new_world_sender, Duration::from_secs(1)).unwrap();
+
+    let (stat_folder_sender, stat_folder_receiver) = channel();
+    let mut stat_folder_watcher = watcher(stat_folder_sender, Duration::from_secs(1)).unwrap();
+
+    let (new_player_sender, new_player_receiver) = channel();
+    let mut new_player_watcher = watcher(new_player_sender, Duration::from_secs(1)).unwrap();
+
+    new_world_watcher
+        .watch(saves_folder, RecursiveMode::NonRecursive)
+        .unwrap();
+
+    /*
+    stat_folder_watcher
+        .watch(
+            PathBuf::from("/home/town/.minecraft/saves/New World (14)/stats"),
+            RecursiveMode::NonRecursive,
+        )
+        .unwrap();
+    */
+
+    loop {
+        println!("bruh1");
+        loop_new_world_watcher(&new_world_receiver, &mut stat_folder_watcher);
+        println!("bruh2");
+        loop_stat_folder_watcher(&stat_folder_receiver, &mut new_player_watcher);
+        println!("bruh3");
+        loop_new_player_watcher(&new_player_receiver, &mut stat_watcher);
+        loop_stat_watcher(&stat_receiver);
+        println!("he");
+    }
 }
 
-fn watch_stats(saves: Vec<PathBuf>) {}
+fn loop_new_player_watcher(receiver: &Receiver<DebouncedEvent>, watcher: &mut INotifyWatcher) {
+    match receiver.recv() {
+        Ok(event) => match event {
+            DebouncedEvent::Create(new_player_stat) => {
+                println!("new_player_stat: {:?}", new_player_stat);
+                watcher
+                    .watch(new_player_stat, RecursiveMode::NonRecursive)
+                    .unwrap();
+            }
+            e => println!("new_player_watcher: {:?}", e),
+        },
+        Err(e) => println!("watch error: {:?}", e),
+    }
+}
+
+fn loop_new_world_watcher(receiver: &Receiver<DebouncedEvent>, watcher: &mut INotifyWatcher) {
+    match receiver.recv() {
+        Ok(event) => match event {
+            DebouncedEvent::Create(new_world_directory) => {
+                println!("new world made! {:?}", new_world_directory);
+                println!(
+                    "{:?}",
+                    watcher
+                        .watch(new_world_directory, RecursiveMode::NonRecursive)
+                        .unwrap()
+                );
+            }
+            _ => (),
+        },
+        Err(e) => println!("watch error: {:?}", e),
+    }
+}
+
+fn loop_stat_folder_watcher(receiver: &Receiver<DebouncedEvent>, watcher: &mut INotifyWatcher) {
+    match receiver.recv() {
+        Ok(event) => {
+            println!("event: {:?}", event);
+
+            match event {
+                DebouncedEvent::Create(new_file) => {
+                    println!("new stat folder? {:?}", new_file);
+                    if new_file.file_name().unwrap() == "stats" {
+                        println!("new stat folder {:?}", new_file);
+                        watcher
+                            .watch(new_file, RecursiveMode::NonRecursive)
+                            .unwrap();
+                    }
+                }
+                e => println!(".....: {:?}", e),
+            }
+        }
+        Err(e) => println!("watch error: {:?}", e),
+    }
+}
+
+fn loop_stat_watcher(receiver: &Receiver<DebouncedEvent>) {
+    match receiver.recv() {
+        Ok(event) => match event {
+            DebouncedEvent::Write(player_stat) => {
+                println!("loop_stat_watcher {:?}", player_stat);
+
+                let player_stat_json =
+                    fs::read_to_string(player_stat).expect("Error trying to read file");
+
+                display_player_stat(player_stat_json);
+            }
+            e => println!("loop_stat_watcher {:?}", e),
+        },
+        Err(e) => println!("watch error: {:?}", e),
+    }
+}
+
+fn display_player_stat(player_json: String) {
+    let p = Player::new(player_json);
+    println!("Time = {}", p.seconds_played());
+}
 
 fn get_minecraft_folder_path() -> PathBuf {
     dirs::home_dir()
@@ -26,40 +136,7 @@ fn get_minecraft_folder_path() -> PathBuf {
         .join(".minecraft")
 }
 
-/*
-fn watch_saves_folder(saves_folder: &PathBuf, saves: &mut Vec<PathBuf>) {
-    // Create a channel to receive the events.
-    let (tx, rx) = channel();
-
-    // Create a watcher object, delivering debounced events.
-    // The notification back-end is selected based on the platform.
-    let mut watcher = watcher(tx, Duration::from_secs(10)).unwrap();
-
-    // Add a path to be watched. All files and directories at that path and
-    // below will be monitored for changes.
-    watcher
-        .watch(saves_folder.as_os_str(), RecursiveMode::NonRecursive)
-        .unwrap();
-
-    loop {
-        match rx.recv() {
-            Ok(event) => {
-                println!("{:?}", event);
-                match event {
-                    DebouncedEvent::Create(new_world_path) => {
-                        saves.push(new_world_path);
-                    }
-                    _ => (),
-                }
-            },
-            Err(e) => println!("watch error: {:?}", e),
-        }
-    }
-}
-*/
-
 // Minecraft stats parsing.
-
 fn remove_minecraft_prefix(stats: String) -> String {
     stats.replace("minecraft:", "")
 }
@@ -80,6 +157,11 @@ struct Player {
 }
 
 impl Player {
+    pub fn new(data: String) -> Player {
+        serde_json::from_str(&remove_minecraft_prefix(data))
+            .expect("Error trying to parse Player's json")
+    }
+
     pub fn seconds_played(&self) -> f64 {
         self.stats.custom.play_one_minute as f64 / 20.0
     }
@@ -88,7 +170,6 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Result, Value};
 
     #[test]
     fn minecraft_folder_exists() {
@@ -141,7 +222,7 @@ mod tests {
 
     #[test]
     fn stats_typed_correctly() {
-        // Some JSON input data as a &str. Maybe this comes from the user.
+        // JSON taken from the stats folder in a random world.
         let data = r#"
         {
             "stats": {
@@ -157,11 +238,16 @@ mod tests {
             "DataVersion": 2230
         }
         "#;
-        
-
         let p: Player = serde_json::from_str(data).expect("Error trying to parse Player's json");
 
-        assert_eq!(p.stats.custom.play_one_minute, 119);
-        assert_eq!(p.seconds_played(), 5.95, "Player's seconds played is not being calculated correctly");
+        assert_eq!(
+            p.stats.custom.play_one_minute, 119,
+            "Player's play_one_minute is being parsed correctly"
+        );
+        assert_eq!(
+            p.seconds_played(),
+            5.95,
+            "Player's seconds played is not being calculated correctly"
+        );
     }
 }
