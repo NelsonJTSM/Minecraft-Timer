@@ -40,9 +40,20 @@ pub fn run() {
     stat_thread.join().unwrap();
 }
 
+fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
+    let mut time_left = time;
+    let hours = time_left / 3600;
+    time_left -= hours * 3600;
+    let minutes = time_left / 60;
+    time_left -= minutes * 60;
+    let seconds = time_left;
+
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+}
+
 fn display_player_stat(player_json: String) {
     let p = Player::new(player_json);
-    println!("Time = {}", p.seconds_played());
+    println!("{}", convert_seconds_to_hh_mm_ss(p.seconds_played() as u64));
 }
 
 fn get_minecraft_folder_path() -> PathBuf {
@@ -58,7 +69,7 @@ fn remove_minecraft_prefix(stats: String) -> String {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Custom {
-    play_one_minute: i64,
+    play_one_minute: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -85,6 +96,15 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seconds_to_time_format() {
+        let x = convert_seconds_to_hh_mm_ss(127);
+        let y = convert_seconds_to_hh_mm_ss(6666);
+
+        assert_eq!(String::from("00:02:07"), x);
+        assert_eq!(String::from("01:51:06"), y)
+    }
 
     #[test]
     fn minecraft_folder_exists() {
