@@ -4,8 +4,9 @@ extern crate notify;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
-use std::time::Duration;
 use std::thread;
+use std::time::{Duration, Instant};
+use regex::Regex;
 
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +19,9 @@ pub fn run() {
     let stat_thread = thread::spawn(|| {
         let (tx, rx) = channel();
         let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(2)).unwrap();
-        watcher.watch(saves_folder, RecursiveMode::Recursive).unwrap();
+        watcher
+            .watch(saves_folder, RecursiveMode::Recursive)
+            .unwrap();
 
         loop {
             match rx.recv() {
@@ -52,8 +55,11 @@ fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
 }
 
 fn display_player_stat(player_json: String) {
-    let p = Player::new(player_json);
-    println!("{}", convert_seconds_to_hh_mm_ss(p.seconds_played() as u64));
+    // let p = Player::new(player_json);
+    // println!("{}", convert_seconds_to_hh_mm_ss(p.seconds_played() as u64));
+
+    let seconds = get_seconds_played_from_stats(&player_json);
+    println!("{}", convert_seconds_to_hh_mm_ss(seconds.unwrap()));
 }
 
 fn get_minecraft_folder_path() -> PathBuf {
@@ -91,6 +97,19 @@ impl Player {
     pub fn seconds_played(&self) -> f64 {
         self.stats.custom.play_one_minute as f64 / 20.0
     }
+}
+
+fn get_seconds_played_from_stats(file: &str) -> Option<u64> {
+    let re = Regex::new(r#"(inute"\s*:\s*)(\d+)"#).unwrap();
+
+    for cap in re.captures_iter(file) {
+        let stat = &cap[2];
+        let out: u64 = stat.parse::<u64>().unwrap();
+
+        return Some(out / 20);
+    }
+    
+    None
 }
 
 #[cfg(test)]
@@ -184,5 +203,30 @@ mod tests {
             5.95,
             "Player's seconds played is not being calculated correctly"
         );
+    }
+
+    #[test]
+    fn player_ticks_from_stats() {
+        let value = String::from(
+            r#"
+        {
+            "stats": {
+                "custom": {
+                    "jump": 2,
+                    "time_since_rest": 119,
+                    "play_one_minute": 119,
+                    "leave_game": 1,
+                    "time_since_death": 119,
+                    "walk_one_cm": 63
+                }
+            },
+            "DataVersion": 2230
+        }
+        "#,
+        );
+
+        let expected = 119;
+
+        assert_eq!(get_seconds_played_from_stats(&value), Some(expected));
     }
 }
