@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration};
 use regex::Regex;
 
 use serde::{Deserialize, Serialize};
@@ -68,10 +68,13 @@ fn get_minecraft_folder_path() -> PathBuf {
         .join(".minecraft")
 }
 
-// Minecraft stats parsing.
+// OLD:
+// 
+/*
 fn remove_minecraft_prefix(stats: String) -> String {
     stats.replace("minecraft:", "")
 }
+*/
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Custom {
@@ -88,6 +91,12 @@ struct Player {
     stats: Stats,
 }
 
+/*
+Old way to grab the time statistic from the stats file.
+
+Does not work for version 1.7.2, since it uses a different format 
+for the stats file.
+
 impl Player {
     pub fn new(data: String) -> Player {
         serde_json::from_str(&remove_minecraft_prefix(data))
@@ -98,7 +107,11 @@ impl Player {
         self.stats.custom.play_one_minute as f64 / 20.0
     }
 }
+*/
 
+
+// Uses a regex to grab the playedOneMinute statistic.
+// Works for both Minecraft 1.7.2 and 1.15
 fn get_seconds_played_from_stats(file: &str) -> Option<u64> {
     let re = Regex::new(r#"(inute"\s*:\s*)(\d+)"#).unwrap();
 
@@ -133,6 +146,7 @@ mod tests {
         );
     }
 
+    /*
     #[test]
     fn removes_minecraft_prefix_from_stats() {
         let stats = String::from(
@@ -173,7 +187,9 @@ mod tests {
 
         assert_eq!(remove_minecraft_prefix(stats), expected);
     }
+    */
 
+    /*
     #[test]
     fn stats_typed_correctly() {
         // JSON taken from the stats folder in a random world.
@@ -204,6 +220,7 @@ mod tests {
             "Player's seconds played is not being calculated correctly"
         );
     }
+    */
 
     #[test]
     fn player_ticks_from_stats() {
