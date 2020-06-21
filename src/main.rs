@@ -17,8 +17,6 @@ fn main() {
 
     let mut receiver = Arc::new(Mutex::new(receiver));
 
-    // let mut sender = Arc::new(Mutex::new(sender));
-
     let application =
         gtk::Application::new(Some("com.github.gtk-rs.examples.clock"), Default::default())
             .expect("Initialization failed...");

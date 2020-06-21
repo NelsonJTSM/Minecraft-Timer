@@ -12,29 +12,32 @@ use serde::{Deserialize, Serialize};
 
 use notify::{DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
 
 pub struct Message {
-    // Should have current time in the future
-    pub minecraft_time: String,
+    pub seconds_played: u64,
     pub last_modified: SystemTime,
 }
 
+// This function creates a new thread, that watches over a minecraft saves folder,
+// then sends a Message to time_sender with any update stats.
+// As of right now, it only works for Linux, since it looks for .minecraft
+// on your home folder.
+// TODO: Add default Windows and MacOS .minecraft location
+// TODO: Add custom .minecraft location
 pub fn run(time_sender: mpsc::Sender<Message>) {
-    println!("sup");
-
     let minecraft_folder = get_minecraft_folder_path();
     let saves_folder = minecraft_folder.join("saves");
 
+    // Creates a thread that continously looks for new stats files on .minecraft
+    // and sends it as a Message to time_sender.
     let stat_thread = thread::spawn(move || {
         let (tx, rx) = channel();
-        let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(2)).unwrap();
+        let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(1)).unwrap();
         watcher
             .watch(saves_folder, RecursiveMode::Recursive)
             .unwrap();
 
         loop {
-            // println!("hi");
             match rx.recv() {
                 Ok(event) => match event {
                     DebouncedEvent::Write(file) => {
@@ -42,15 +45,14 @@ pub fn run(time_sender: mpsc::Sender<Message>) {
                             && file.parent().unwrap().file_name().unwrap() == "stats"
                         {
                             let last_modified = file.metadata().unwrap().modified().unwrap();
-                            let minecraft_time =
-                                display_player_stat(fs::read_to_string(file).unwrap());
-
-                            println!("0.0");
+                            // let minecraft_time =
+                            //    display_player_stat(fs::read_to_string(file).unwrap());
+                            let seconds_played = get_seconds_played_from_stats(&fs::read_to_string(file).unwrap()).unwrap();
 
                             time_sender
                                 .send(Message {
                                     last_modified,
-                                    minecraft_time,
+                                    seconds_played,
                                 })
                                 .unwrap();
                         }
@@ -67,7 +69,7 @@ pub fn run(time_sender: mpsc::Sender<Message>) {
     // stat_thread.join().unwrap();
 }
 
-fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
+pub fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
     let mut time_left = time;
     let hours = time_left / 3600;
     time_left -= hours * 3600;
@@ -78,10 +80,8 @@ fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
+// 
 fn display_player_stat(player_json: String) -> String {
-    // let p = Player::new(player_json);
-    // println!("{}", convert_seconds_to_hh_mm_ss(p.seconds_played() as u64));
-
     let seconds = get_seconds_played_from_stats(&player_json);
     convert_seconds_to_hh_mm_ss(seconds.unwrap())
 }
