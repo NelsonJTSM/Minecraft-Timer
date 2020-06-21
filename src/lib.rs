@@ -1,22 +1,32 @@
 extern crate dirs;
 extern crate notify;
 
+use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread;
-use std::time::{Duration};
-use regex::Regex;
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
 use notify::{DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 
-pub fn run() {
+pub struct Message {
+    // Should have current time in the future
+    pub minecraft_time: String,
+    pub last_modified: SystemTime,
+}
+
+pub fn run(time_sender: mpsc::Sender<Message>) {
+    println!("sup");
+
     let minecraft_folder = get_minecraft_folder_path();
     let saves_folder = minecraft_folder.join("saves");
 
-    let stat_thread = thread::spawn(|| {
+    let stat_thread = thread::spawn(move || {
         let (tx, rx) = channel();
         let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(2)).unwrap();
         watcher
@@ -24,23 +34,37 @@ pub fn run() {
             .unwrap();
 
         loop {
+            // println!("hi");
             match rx.recv() {
                 Ok(event) => match event {
                     DebouncedEvent::Write(file) => {
                         if file.extension().unwrap() == "json"
                             && file.parent().unwrap().file_name().unwrap() == "stats"
                         {
-                            display_player_stat(fs::read_to_string(file).unwrap());
+                            let last_modified = file.metadata().unwrap().modified().unwrap();
+                            let minecraft_time =
+                                display_player_stat(fs::read_to_string(file).unwrap());
+
+                            println!("0.0");
+
+                            time_sender
+                                .send(Message {
+                                    last_modified,
+                                    minecraft_time,
+                                })
+                                .unwrap();
                         }
                     }
                     _ => (),
                 },
                 Err(e) => println!("watch error: {:?}", e),
             }
+
+            thread::sleep(Duration::from_millis(50));
         }
     });
 
-    stat_thread.join().unwrap();
+    // stat_thread.join().unwrap();
 }
 
 fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
@@ -54,12 +78,12 @@ fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
-fn display_player_stat(player_json: String) {
+fn display_player_stat(player_json: String) -> String {
     // let p = Player::new(player_json);
     // println!("{}", convert_seconds_to_hh_mm_ss(p.seconds_played() as u64));
 
     let seconds = get_seconds_played_from_stats(&player_json);
-    println!("{}", convert_seconds_to_hh_mm_ss(seconds.unwrap()));
+    convert_seconds_to_hh_mm_ss(seconds.unwrap())
 }
 
 fn get_minecraft_folder_path() -> PathBuf {
@@ -69,7 +93,7 @@ fn get_minecraft_folder_path() -> PathBuf {
 }
 
 // OLD:
-// 
+//
 /*
 fn remove_minecraft_prefix(stats: String) -> String {
     stats.replace("minecraft:", "")
@@ -94,7 +118,7 @@ struct Player {
 /*
 Old way to grab the time statistic from the stats file.
 
-Does not work for version 1.7.2, since it uses a different format 
+Does not work for version 1.7.2, since it uses a different format
 for the stats file.
 
 impl Player {
@@ -109,7 +133,6 @@ impl Player {
 }
 */
 
-
 // Uses a regex to grab the playedOneMinute statistic.
 // Works for both Minecraft 1.7.2 and 1.15
 fn get_seconds_played_from_stats(file: &str) -> Option<u64> {
@@ -121,7 +144,6 @@ fn get_seconds_played_from_stats(file: &str) -> Option<u64> {
 
         return Some(out / 20);
     }
-    
     None
 }
 
