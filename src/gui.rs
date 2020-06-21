@@ -32,7 +32,7 @@ pub fn build_ui(
 
     window.show_all();
 
-    let mut last_message: Arc<Mutex<Option<minecraft_timer::Message>>> = Arc::new(Mutex::new(None));
+    let mut _last_message: Arc<Mutex<Option<minecraft_timer::Message>>> = Arc::new(Mutex::new(None));
 
     // we are using a closure to capture the label (else we could also use a normal function)
     let tick = move || {
@@ -42,13 +42,13 @@ pub fn build_ui(
             .recv_timeout(Duration::from_millis(100));
 
         match message {
-            Ok(message) => Arc::clone(&last_message).lock().unwrap().replace(message),
+            Ok(message) => Arc::clone(&_last_message).lock().unwrap().replace(message),
             _ => None,
         };
 
         // let x = Arc::clone(&last_message).lock().unwrap().as_ref();
 
-        match Arc::clone(&last_message).lock().unwrap().as_ref() {
+        match Arc::clone(&_last_message).lock().unwrap().as_ref() {
             Some(time) => {
                 let seconds_passed = SystemTime::now().duration_since(time.last_modified).unwrap().as_secs();
                 let full_seconds = seconds_passed + time.seconds_played;

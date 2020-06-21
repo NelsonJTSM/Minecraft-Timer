@@ -30,7 +30,7 @@ pub fn run(time_sender: mpsc::Sender<Message>) {
 
     // Creates a thread that continously looks for new stats files on .minecraft
     // and sends it as a Message to time_sender.
-    let stat_thread = thread::spawn(move || {
+    let _stat_thread = thread::spawn(move || {
         let (tx, rx) = channel();
         let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(1)).unwrap();
         watcher
@@ -65,8 +65,6 @@ pub fn run(time_sender: mpsc::Sender<Message>) {
             thread::sleep(Duration::from_millis(50));
         }
     });
-
-    // stat_thread.join().unwrap();
 }
 
 pub fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
@@ -80,11 +78,12 @@ pub fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
-// 
+/*
 fn display_player_stat(player_json: String) -> String {
     let seconds = get_seconds_played_from_stats(&player_json);
     convert_seconds_to_hh_mm_ss(seconds.unwrap())
 }
+*/
 
 fn get_minecraft_folder_path() -> PathBuf {
     dirs::home_dir()
