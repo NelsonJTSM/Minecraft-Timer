@@ -32,34 +32,62 @@ pub fn build_ui(
 
     window.show_all();
 
-    let mut _last_message: Arc<Mutex<Option<minecraft_timer::Message>>> = Arc::new(Mutex::new(None));
+    let last_message: Arc<Mutex<Option<minecraft_timer::Message>>> = Arc::new(Mutex::new(None));
 
-    // we are using a closure to capture the label (else we could also use a normal function)
-    let tick = move || {
+    let last_message_clone1 = Arc::clone(&last_message);
+
+    let update_world = move || {
         let message = receiver
             .lock()
             .unwrap()
             .recv_timeout(Duration::from_millis(100));
 
         match message {
-            Ok(message) => Arc::clone(&_last_message).lock().unwrap().replace(message),
+            Ok(message) => last_message_clone1.lock().unwrap().replace(message),
             _ => None,
         };
 
-        // let x = Arc::clone(&last_message).lock().unwrap().as_ref();
+        glib::Continue(true)
+    };
 
-        match Arc::clone(&_last_message).lock().unwrap().as_ref() {
-            Some(time) => {
-                let seconds_passed = SystemTime::now().duration_since(time.last_modified).unwrap().as_secs();
-                let full_seconds = seconds_passed + time.seconds_played;
-                label.set_text(&minecraft_timer::convert_seconds_to_hh_mm_ss(full_seconds));
+    let last_message_clone2 = Arc::clone(&last_message);
+
+    // Gets called every Minecraft tick (every 1/20th of a second).
+    // Used to update visual of the timer.
+    let tick = move || {
+        let label_text = match last_message_clone2.lock().unwrap().as_ref() {
+            Some(message) => {
+                /*
+                if message.world.is_none() && message.player.is_none() {
+                    String::from("00:00:00")
+                }
+                */
+                
+                let ticks_played = match message.player.as_ref() {
+                    Some(player) => {
+                        player.ticks_played
+                    },
+                    None => 0
+                };
+
+                let last_modified = match message.world.as_ref() {
+                    Some(world) => {
+                        world.last_modified
+                    },
+                    None => SystemTime::now()
+                };
+
+                minecraft_timer::get_time_difference(last_modified, ticks_played)
             },
-            _ => (),
-        }
+            _ => String::from("00:00:00"),
+        };
+
+        label.set_text(&label_text);
 
         glib::Continue(true)
     };
 
     // executes the closure once every second
-    gtk::timeout_add_seconds(1, tick);
+    gtk::timeout_add_seconds(1, update_world);
+    gtk::timeout_add(50, tick);
 }

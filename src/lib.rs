@@ -8,13 +8,19 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use serde::{Deserialize, Serialize};
-
 use notify::{DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc;
 
 pub struct Message {
-    pub seconds_played: u64,
+    pub player: Option<Player>,
+    pub world: Option<World>,
+}
+
+pub struct Player {
+    pub ticks_played: u64,
+}
+
+pub struct World {
     pub last_modified: SystemTime,
 }
 
@@ -39,32 +45,70 @@ pub fn run(time_sender: mpsc::Sender<Message>) {
 
         loop {
             match rx.recv() {
-                Ok(event) => match event {
-                    DebouncedEvent::Write(file) => {
-                        if file.extension().unwrap() == "json"
-                            && file.parent().unwrap().file_name().unwrap() == "stats"
-                        {
-                            let last_modified = file.metadata().unwrap().modified().unwrap();
-                            // let minecraft_time =
-                            //    display_player_stat(fs::read_to_string(file).unwrap());
-                            let seconds_played = get_seconds_played_from_stats(&fs::read_to_string(file).unwrap()).unwrap();
-
-                            time_sender
-                                .send(Message {
-                                    last_modified,
-                                    seconds_played,
-                                })
+                Ok(event) => {
+                    match event {
+                        DebouncedEvent::Write(file) => {
+                            if is_stat_file(&file) {
+                                let last_modified = file.metadata().unwrap().modified().unwrap();
+                                let ticks_played = get_ticks_played_from_stats(
+                                    &fs::read_to_string(&file).unwrap(),
+                                )
                                 .unwrap();
+
+                                let player = Some(Player { ticks_played });
+                                let world = Some(World { last_modified });
+
+                                time_sender.send(Message { player, world }).unwrap();
+                            }
                         }
+                        // Assumes this is the first time a world is being loaded up.
+                        // Written so the timer starts at 00:00
+                        DebouncedEvent::Create(file) => {
+                            if is_new_world(&file) {
+                                let last_modified = file.metadata().unwrap().modified().unwrap();
+
+                                let world = Some(World { last_modified });
+                                time_sender
+                                    .send(Message {
+                                        world,
+                                        player: None,
+                                    })
+                                    .unwrap();
+                            }
+                        }
+                        _ => (),
                     }
-                    _ => (),
-                },
+                }
                 Err(e) => println!("watch error: {:?}", e),
             }
 
             thread::sleep(Duration::from_millis(50));
         }
     });
+}
+
+// Returns true if the file is a file for a new minecraft world.
+// TODO: add testing.
+fn is_new_world(file: &PathBuf) -> bool {
+    file.parent().unwrap().file_name().unwrap() == "saves"
+}
+
+fn is_stat_file(file: &PathBuf) -> bool {
+    if file.extension().is_none()
+        || file.parent().is_none()
+        || file.parent().unwrap().file_name().is_none()
+    {
+        false
+    } else {
+        file.extension().unwrap() == "json"
+            && file.parent().unwrap().file_name().unwrap() == "stats"
+    }
+}
+
+pub fn get_time_difference(time: SystemTime, ticks: u64) -> String {
+    let x = SystemTime::now().duration_since(time).unwrap().as_secs() + (ticks / 20);
+
+    convert_seconds_to_hh_mm_ss(x)
 }
 
 pub fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
@@ -78,70 +122,24 @@ pub fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
-/*
-fn display_player_stat(player_json: String) -> String {
-    let seconds = get_seconds_played_from_stats(&player_json);
-    convert_seconds_to_hh_mm_ss(seconds.unwrap())
-}
-*/
-
 fn get_minecraft_folder_path() -> PathBuf {
     dirs::home_dir()
         .expect("Could not get home directory")
         .join(".minecraft")
 }
 
-// OLD:
-//
-/*
-fn remove_minecraft_prefix(stats: String) -> String {
-    stats.replace("minecraft:", "")
-}
-*/
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Custom {
-    play_one_minute: u64,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Stats {
-    custom: Custom,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Player {
-    stats: Stats,
-}
-
-/*
-Old way to grab the time statistic from the stats file.
-
-Does not work for version 1.7.2, since it uses a different format
-for the stats file.
-
-impl Player {
-    pub fn new(data: String) -> Player {
-        serde_json::from_str(&remove_minecraft_prefix(data))
-            .expect("Error trying to parse Player's json")
-    }
-
-    pub fn seconds_played(&self) -> f64 {
-        self.stats.custom.play_one_minute as f64 / 20.0
-    }
-}
-*/
-
 // Uses a regex to grab the playedOneMinute statistic.
 // Works for both Minecraft 1.7.2 and 1.15
-fn get_seconds_played_from_stats(file: &str) -> Option<u64> {
+// 20 ticks = 1 second
+// TODO: Refractor this code, bad stuff in it.
+fn get_ticks_played_from_stats(file: &str) -> Option<u64> {
     let re = Regex::new(r#"(inute"\s*:\s*)(\d+)"#).unwrap();
 
     for cap in re.captures_iter(file) {
         let stat = &cap[2];
         let out: u64 = stat.parse::<u64>().unwrap();
 
-        return Some(out / 20);
+        return Some(out);
     }
     None
 }
@@ -265,6 +263,6 @@ mod tests {
 
         let expected = 119;
 
-        assert_eq!(get_seconds_played_from_stats(&value), Some(expected));
+        assert_eq!(get_ticks_played_from_stats(&value), Some(expected));
     }
 }
