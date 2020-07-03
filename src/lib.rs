@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread;
 use std::time::{Duration, SystemTime};
+use sys_info::os_type;
 
 use notify::{DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc;
@@ -28,10 +29,9 @@ pub struct World {
 // then sends a Message to time_sender with any update stats.
 // As of right now, it only works for Linux, since it looks for .minecraft
 // on your home folder.
-// TODO: Add default Windows and MacOS .minecraft location
 // TODO: Add custom .minecraft location
 pub fn run(time_sender: mpsc::Sender<Message>) {
-    let minecraft_folder = get_minecraft_folder_path();
+    let minecraft_folder = get_minecraft_folder_path().unwrap();
     let saves_folder = minecraft_folder.join("saves");
 
     // Creates a thread that continously looks for new stats files on .minecraft
@@ -122,10 +122,25 @@ pub fn convert_seconds_to_hh_mm_ss(time: u64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
-fn get_minecraft_folder_path() -> PathBuf {
-    dirs::home_dir()
-        .expect("Could not get home directory")
-        .join(".minecraft")
+fn get_minecraft_folder_path() -> Option<PathBuf> {
+    let os = os_type().unwrap();
+
+    match os.as_str() {
+        "Windows" => {
+            // Windows default .minecraft directory location i %APP_DATA%/.minecraft
+            let roaming = dirs::config_dir().unwrap();
+            let app_data = roaming.parent().unwrap().to_path_buf();
+            return Some(app_data.join(".minecraft"));
+        },
+        "Linux" => {
+            // Linux default .minecraft directory location is $HOME/.minecraft
+            return Some(dirs::home_dir().expect("Could not get home directory").join(".minecraft"));
+        },
+        "Darwin" => {
+            return Some(dirs::config_dir().unwrap().join("minecraft"));
+        },
+        _ => return None,
+    };
 }
 
 // Uses a regex to grab the playedOneMinute statistic.
@@ -160,7 +175,7 @@ mod tests {
     #[test]
     fn minecraft_folder_exists() {
         assert!(
-            get_minecraft_folder_path().as_path().is_dir(),
+            get_minecraft_folder_path().unwrap().as_path().is_dir(),
             "Minecraft folder does not exists"
         );
     }

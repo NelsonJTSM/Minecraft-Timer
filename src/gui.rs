@@ -57,12 +57,6 @@ pub fn build_ui(
     let tick = move || {
         let label_text = match last_message_clone2.lock().unwrap().as_ref() {
             Some(message) => {
-                /*
-                if message.world.is_none() && message.player.is_none() {
-                    String::from("00:00:00")
-                }
-                */
-                
                 let ticks_played = match message.player.as_ref() {
                     Some(player) => {
                         player.ticks_played
