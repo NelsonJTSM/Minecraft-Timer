@@ -2,6 +2,10 @@
 
 An accurate game timer for Minecraft, written in Rust. 
 
+## Status
+
+This project has been mostly abandoned. There are better alternatives that you can use, for example LiveSplit's built in Minecraft timer.
+
 ## Getting Started
 
 ### Prerequisites
